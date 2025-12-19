@@ -1,0 +1,760 @@
+
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JIS A 1110 粗骨材の密度・吸水率（容器/かご補正・SSDのみ対応・Excel/PDF）</title>
+<style>
+  :root { --bg:#f7f9fc; --card:#fff; --accent:#1565c0; --text:#222; --muted:#667; --error:#b00020; }
+  body { font-family:"Segoe UI","Hiragino Kaku Gothic ProN","Meiryo",system-ui,-apple-system,sans-serif;
+         background:var(--bg); color:var(--text); margin:0; padding:2rem 1rem; line-height:1.6; }
+  .container { max-width:1100px; margin:0 auto; }
+  h1 { font-size:1.6rem; margin-bottom:.25rem; }
+  .subtitle { color:var(--muted); margin-bottom:1rem; }
+  .card { background:var(--card); border-radius:12px; box-shadow:0 8px 24px rgba(0,0,0,.06); padding:1rem; margin-bottom:1rem; }
+  .grid { display:grid; gap:.75rem; }
+  @media (min-width: 960px) { .grid-3{grid-template-columns:repeat(3,1fr);} .grid-2{grid-template-columns:1fr 1fr;} }
+  label { font-weight:600; display:block; margin-bottom:.3rem; }
+  input[type="number"], input[type="text"], input[type="date"], select, textarea {
+    width:100%; padding:.55rem .7rem; border-radius:8px; border:1px solid #cfd8dc; font-size:1rem; outline:none; background:#fff;
+  }
+  input[type="number"]:focus, select:focus, textarea:focus { border-color:var(--accent); }
+  .hint { color:var(--muted); font-size:.9rem; }
+  .actions { display:flex; gap:.5rem; flex-wrap:wrap; margin-top:.5rem; }
+  button { background:var(--accent); color:#fff; border:none; padding:.6rem .9rem; border-radius:8px; cursor:pointer; font-weight:600; }
+  button.secondary { background:#455a64; } button.success { background:#2e7d32; }
+  button.warning { background:#ef6c00; } button.danger { background:var(--error); }
+  table { width:100%; border-collapse:collapse; margin-top:.5rem; }
+  th,td { border:1px solid #e0e6eb; padding:.45rem; text-align:right; }
+  th { background:#f4f7ff; text-align:center; }
+  .mono { font-family:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace; }
+  .center { text-align:center; }
+  .error-text { color:var(--error); font-weight:700; display:none; }
+  .footer { color:var(--muted); font-size:.9rem; margin-top:.75rem; }
+  .no-print { display:inline-block; }
+  .print-only { display:none; }
+
+  /* ===== 印刷（PDF）用：1ページに収める ===== */
+  @media print {
+    @page { size: A4; margin: 10mm; }           /* A4固定＋余白縮小 */
+    html, body { height: 297mm; }               /* A4高に合わせる */
+    body { padding:0; font-size: 10pt; }        /* 文字サイズをやや小さめに */
+    .no-print { display:none !important; }
+    .print-only { display:block !important; }
+    .card { box-shadow:none; border:1px solid #ddd; break-inside: avoid; page-break-inside: avoid; }
+    table { page-break-inside: avoid; }
+    h1 { font-size: 14pt; margin: 0 0 6pt 0; }
+    h2 { font-size: 12pt; margin: 6pt 0; }
+    .subtitle { margin-bottom: 6pt; }
+    .hint, .footer { font-size: 9pt; }
+    .container { max-width: 100%; }
+  }
+</style>
+
+manifest.json
+<meta name="theme-color" content="#1565c0">
+icons/icon-192.png
+icons/icon-192.png
+
+</head>
+<body>
+<div class="container">
+  <h1>粗骨材の密度・吸水率試験（JIS A 1110 準拠）</h1>
+  <div class="subtitle">
+    容器・かごの質量補正／乾燥未入力は表乾密度のみ計算／平均のみ表示／Excel（CSV・BOM付与）・PDF出力／識別情報の保存・削除（拡張対応）
+  </div>
+
+  <!-- 1) 試験条件（共通） -->
+  <div class="card">
+    <h2>試験条件（共通）</h2>
+    <div class="grid grid-3">
+      <div>
+        <label class="mono">
+          <input type="checkbox" id="useRho"> 水温による水密度補正を使用する
+        </label>
+        <div class="hint">オフ時は ρw=1.000。オン時は 15～25℃の表＋線形補間で ρw を設定（指定値に準拠）。</div>
+      </div>
+      <div>
+        <label for="waterTemp">水温（℃）</label>
+        <input type="number" id="waterTemp" step="0.1" placeholder="20.0">
+      </div>
+      <div>
+        <label for="rhoW">水の密度 ρ<sub>w</sub>（g/cm³）</label>
+        <input type="number" id="rhoW" step="0.0001" placeholder="1.0000">
+        <div class="hint small">補正オン時は未入力なら水温から自動算出。手動上書きも可。</div>
+      </div>
+    </div>
+
+    <div class="actions no-print">
+      <button id="addRowBtn" class="success">＋ 試料を追加</button>
+      <button id="sampleBtn" class="secondary">サンプル値を入力</button>
+      <button id="calcBtn">計算する</button>
+      <button id="resetBtn" class="danger">リセット</button>
+    </div>
+    <div id="err" class="error-text"></div>
+  </div>
+
+  <!-- 2) 入力（各試料） -->
+  <div class="card">
+    <h2>入力（各試料）</h2>
+    <table id="dataTable">
+      <thead>
+        <tr>
+          <th>試料名/ID</th>
+          <th>乾燥：容器＋試料 A<sub>total</sub>（g）</th>
+          <th>乾燥：容器質量 A<sub>容器</sub>（g）</th>
+          <th>表乾：容器＋試料 B<sub>total</sub>（g）</th>
+          <th>表乾：容器質量 B<sub>容器</sub>（g）</th>
+          <th>水中：かご＋試料 C<sub>total</sub>（g）</th>
+          <th>水中：かご質量 C<sub>かご</sub>（g）</th>
+          <th class="no-print">操作</th>
+        </tr>
+      </thead>
+      <tbody id="dataBody"></tbody>
+    </table>
+    <div class="hint">水中質量は「（かご＋試料）−（かごのみ）」で算出します。</div>
+  </div>
+
+  <!-- 3) 結果（各試料・平均） -->
+  <div class="card">
+    <h2>結果（各試料・平均）</h2>
+    <table id="resTable">
+      <thead>
+        <tr>
+          <th>試料名/ID</th>
+          <th>乾燥質量 A（g）</th>
+          <th>表乾質量 B（g）</th>
+          <th>水中質量 C（g）</th>
+          <th>表乾密度 SSD（g/cm³)</th>
+          <th>絶乾密度 OD（g/cm³)</th>
+          <th>見掛密度 App（g/cm³)</th>
+          <th>吸水率 Abs (%)</th>
+        </tr>
+      </thead>
+      <tbody id="resBody"></tbody>
+      <tfoot>
+        <tr style="background:#f9fafc;font-weight:700;">
+          <td class="center">平均</td>
+          <td id="avgA" class="mono">—</td>
+          <td id="avgB" class="mono">—</td>
+          <td id="avgC" class="mono">—</td>
+          <td id="avgSSD" class="mono">—</td>
+          <td id="avgOD" class="mono">—</td>
+          <td id="avgApp" class="mono">—</td>
+          <td id="avgAbs" class="mono">—</td>
+        </tr>
+      </tfoot>
+    </table>
+
+    <div class="actions no-print">
+      <button id="exportCsvBtn" class="warning">Excel（CSVに出力・BOM付与）</button>
+      <button id="printBtn" class="secondary">PDFに出力（印刷）</button>
+    </div>
+
+    <div class="footer">
+      計算式：A = A<sub>total</sub> − A<sub>容器</sub>、B = B<sub>total</sub> − B<sub>容器</sub>、C = C<sub>total</sub> − C<sub>かご</sub>。<br>
+      V<sub>disp</sub> = (B − C) / ρ<sub>w</sub>。表乾密度 = B / V<sub>disp</sub>、絶乾密度 = A / V<sub>disp</sub>、見掛密度 = A / (A − C)、吸水率 = (B − A)/A×100。<br>
+      ※ 乾燥（A）が未入力の試料は 表乾密度 のみ算出し、絶乾密度／見掛密度／吸水率は「—」表示。
+    </div>
+  </div>
+
+  <!-- 4) 識別情報（拡張） -->
+  <div class="card">
+    <h2>識別情報（拡張）</h2>
+    <div class="grid grid-3">
+      <div>
+        <label for="subject">件名</label>
+        <input type="text" id="subject" placeholder="例：12月出荷ロットA">
+      </div>
+      <div>
+        <label for="tester">試験者</label>
+        <input type="text" id="tester" placeholder="例：土田 ローム">
+      </div>
+      <div>
+        <label for="company">会社名</label>
+        <input type="text" id="company" placeholder="例：○○開発株式会社">
+      </div>
+      <div>
+        <label for="projectId">案件番号</label>
+        <input type="text" id="projectId" placeholder="例：PJ-2025-12-001">
+      </div>
+      <div>
+        <label for="lotNo">ロット番号</label>
+        <input type="text" id="lotNo" placeholder="例：L-25-1201">
+      </div>
+      <div>
+        <label for="materialName">材料（試料）名</label>
+        <input type="text" id="materialName" placeholder="例：砕石 20-5">
+      </div>
+      <div>
+        <label for="testDate">試験日</label>
+        <input type="date" id="testDate">
+      </div>
+      <div>
+        <label for="location">試験場所</label>
+        <input type="text" id="location" placeholder="例：資材センター">
+      </div>
+      <div>
+        <label for="remarks">備考</label>
+        <input type="text" id="remarks" placeholder="例：乾燥は105℃で24h">
+      </div>
+    </div>
+
+    <div class="grid grid-3" style="margin-top:.5rem;">
+      <div>
+        <label class="mono">
+          <input type="checkbox" id="enableSave"> 自動保存を有効にする
+        </label>
+        <div class="hint">ONで識別情報（＋オプションで試料行）を変更時に保存します。</div>
+      </div>
+      <div>
+        <label class="mono">
+          <input type="checkbox" id="saveRowsToggle"> 入力試料行も保存する
+        </label>
+        <div class="hint">行のIDとA/B/C各値、C(かご)を保存／読み込み対象に含めます。</div>
+      </div>
+      <div>
+        <label class="mono">
+          <input type="checkbox" id="extMetaToCsvToggle"> 拡張項目をCSVメタに含める
+        </label>
+        <div class="hint">会社名・案件番号・材料名・試験日・場所・備考をCSV先頭に追加します。</div>
+      </div>
+      <div>
+        <label class="mono">
+          <input type="checkbox" id="extMetaToPrintToggle"> 拡張項目をPDFヘッダーに表示
+        </label>
+        <div class="hint">印刷時のヘッダーに拡張項目を追加表示します。</div>
+      </div>
+    </div>
+
+    <div class="actions no-print" style="margin-top:.5rem;">
+      <button id="saveMetaBtn">保存</button>
+      <button id="loadMetaBtn" class="secondary">読み込み</button>
+      <button id="clearMetaBtn" class="danger">保存情報を削除</button>
+    </div>
+    <div id="saveStatus" class="hint no-print"></div>
+
+    <!-- 印刷専用のヘッダー（入力値をテキストで出すため） -->
+    <div id="printHeader" class="print-only" style="display:none;">
+      <table style="width:100%; border-collapse:collapse; margin-top:.5rem;">
+        <tbody id="phBase">
+          <tr>
+            <th style="text-align:left; padding:.2rem .3rem; border:1px solid #e0e6eb;">件名</th>
+            <td id="phSubject" style="padding:.2rem .3rem; border:1px solid #e0e6eb;"></td>
+            <th style="text-align:left; padding:.2rem .3rem; border:1px solid #e0e6eb;">試験者</th>
+            <td id="phTester" style="padding:.2rem .3rem; border:1px solid #e0e6eb;"></td>
+            <th style="text-align:left; padding:.2rem .3rem; border:1px solid #e0e6eb;">水温(℃)</th>
+            <td id="phTemp" style="padding:.2rem .3rem; border:1px solid #e0e6eb;"></td>
+            <th style="text-align:left; padding:.2rem .3rem; border:1px solid #e0e6eb;">ρw(g/cm³)</th>
+            <td id="phRho" style="padding:.2rem .3rem; border:1px solid #e0e6eb;"></td>
+          </tr>
+        </tbody>
+        <tbody id="phExtra"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+  /* ========= ρw 指定テーブル（15～25℃）＋線形補間 ========= */
+  const RHO_TABLE = [
+    {t:15, r:0.9991},{t:16, r:0.9989},{t:17, r:0.9988},{t:18, r:0.9986},{t:19, r:0.9984},
+    {t:20, r:0.9982},{t:21, r:0.9980},{t:22, r:0.9978},{t:23, r:0.9975},{t:24, r:0.9973},{t:25, r:0.9970}
+  ];
+  function rhoFromTableLinear(tempC){
+    const t = Number.isFinite(tempC) ? tempC : 20;
+    if (t <= RHO_TABLE[0].t) return RHO_TABLE[0].r;
+    if (t >= RHO_TABLE[RHO_TABLE.length-1].t) return RHO_TABLE[RHO_TABLE.length-1].r;
+    for (let i=0; i<RHO_TABLE.length-1; i++){
+      const p = RHO_TABLE[i], q = RHO_TABLE[i+1];
+      if (t >= p.t && t <= q.t){
+        const alpha = (t - p.t) / (q.t - p.t);
+        return p.r*(1-alpha) + q.r*alpha;
+      }
+    }
+    return 0.9982;
+  }
+
+  // 表示桁数
+  const fmt3 = x => (x==null || !isFinite(x)) ? "—" : Number(x).toFixed(3);
+  const fmt2 = x => (x==null || !isFinite(x)) ? "—" : Number(x).toFixed(2);
+  const fmtA = x => (x==null || !isFinite(x)) ? "—" : Number(x).toFixed(2);
+
+  // 統計（平均のみ）
+  const mean = arr => arr.length ? arr.reduce((a,b)=>a+b,0)/arr.length : NaN;
+
+  // ====== エラー表示 ======
+  function showErr(msg){
+    const box=document.getElementById('err');
+    if(msg){ box.textContent=msg; box.style.display='block'; }
+    else { box.textContent=""; box.style.display='none'; }
+  }
+
+  // ====== 入力行追加（Cかごの自動転記に対応） ======
+  function addRow(id="", aTot="", aCont="", bTot="", bCont="", cTot="", cBasket="") {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td class="center"><input type="text" value="${id}" placeholder="Sample1" style="width:100%; text-align:center"></td>
+      <td><input type="number" step="0.01" value="${aTot}" placeholder="（空欄可）例：2700.0"></td>
+      <td><input type="number" step="0.01" value="${aCont}" placeholder="（空欄可）例：500.0"></td>
+      <td><input type="number" step="0.01" value="${bTot}" placeholder="例：2750.0"></td>
+      <td><input type="number" step="0.01" value="${bCont}" placeholder="例：500.0"></td>
+      <td><input type="number" step="0.01" value="${cTot}" placeholder="例：1900.0"></td>
+      <td><input type="number" step="0.01" value="${cBasket}" placeholder="例：387.7" data-key="C_kago"></td>
+      <td class="no-print"><button class="danger" onclick="this.closest('tr').remove()">削除</button></td>
+    `;
+    document.getElementById('dataBody').appendChild(tr);
+    initNewRowCBasket(tr); // 追加行に 1行目の C(かご) を初期セット
+  }
+
+  // 初期行
+  addRow("Sample1");
+
+  // ====== 計算本体（標準偏差なし） ======
+  function calcAll(){
+    showErr("");
+
+    const useRho = document.getElementById('useRho').checked;
+    let tC   = parseFloat(document.getElementById('waterTemp').value);
+    let rhoW = parseFloat(document.getElementById('rhoW').value);
+
+    if (useRho) {
+      const approx = rhoFromTableLinear(tC);
+      if (!Number.isFinite(rhoW) || rhoW <= 0) {
+        rhoW = approx;
+        document.getElementById('rhoW').value = Number(rhoW).toFixed(4);
+      }
+    } else {
+      rhoW = 1.0000;
+      document.getElementById('rhoW').value = Number(rhoW).toFixed(4);
+    }
+
+    const rows = Array.from(document.querySelectorAll('#dataBody tr'));
+    const resBody = document.getElementById('resBody');
+    resBody.innerHTML = "";
+
+    const listA=[], listB=[], listC=[], listSSD=[], listOD=[], listApp=[], listAbs=[];
+
+    for (const tr of rows) {
+      const cells = tr.querySelectorAll('td input');
+      const id   = cells[0].value || "";
+      const aTot = parseFloat(cells[1].value);
+      const aCon = parseFloat(cells[2].value);
+      const bTot = parseFloat(cells[3].value);
+      const bCon = parseFloat(cells[4].value);
+      const cTot = parseFloat(cells[5].value);
+      const cBag = parseFloat(cells[6].value);
+
+      const bcOk = [bTot,bCon,cTot,cBag].every(v => isFinite(v) && v>0);
+      if (!bcOk) { showErr("表乾（B_total/B容器）・水中（C_total/Cかご）は必須です。正の数値で入力してください。"); return; }
+
+      const aProvided = isFinite(aTot) && isFinite(aCon) && aTot>0 && aCon>0;
+
+      const B = bTot - bCon;
+      const C = cTot - cBag;
+      if (B<=0 || C<=0) { showErr("補正後のBまたはCが0以下です。容器/かご質量の入力を見直してください。"); return; }
+      if (C >= B) { showErr("水中質量Cは表乾質量Bより小さい必要があります。"); return; }
+
+      let A = NaN;
+      if (aProvided) {
+        A = aTot - aCon;
+        if (A<=0) { showErr("補正後のAが0以下です。容器質量の入力を見直してください。"); return; }
+        if (B <= A) { showErr("Aを入力する場合、BはAより大きい必要があります（吸水により増加）。"); return; }
+      }
+
+      const Vdisp = (B - C) / rhoW;
+      const dens_SSD = B / Vdisp;
+      let dens_OD = NaN, dens_App = NaN, Abs = NaN;
+      if (aProvided) {
+        dens_OD  = A / Vdisp;
+        dens_App = A / (A - C);
+        Abs      = (B - A) / A * 100;
+      }
+
+      const rtr = document.createElement('tr');
+      rtr.innerHTML = `
+        <td class="center mono">${id}</td>
+        <td class="mono">${aProvided ? fmtA(A) : "—"}</td>
+        <td class="mono">${fmtA(B)}</td>
+        <td class="mono">${fmtA(C)}</td>
+        <td class="mono">${fmt3(dens_SSD)}</td>
+        <td class="mono">${aProvided ? fmt3(dens_OD)  : "—"}</td>
+        <td class="mono">${aProvided ? fmt3(dens_App) : "—"}</td>
+        <td class="mono">${aProvided ? fmt2(Abs) : "—"}</td>
+      `;
+      resBody.appendChild(rtr);
+
+      if (aProvided) { listA.push(A); listOD.push(dens_OD); listApp.push(dens_App); listAbs.push(Abs); }
+      listB.push(B); listC.push(C); listSSD.push(dens_SSD);
+    }
+
+    document.getElementById('avgA').textContent   = listA.length ? fmtA(mean(listA))    : "—";
+    document.getElementById('avgOD').textContent  = listOD.length ? fmt3(mean(listOD))  : "—";
+    document.getElementById('avgApp').textContent = listApp.length ? fmt3(mean(listApp)) : "—";
+    document.getElementById('avgAbs').textContent = listAbs.length ? fmt2(mean(listAbs)) : "—";
+
+    document.getElementById('avgB').textContent   = listB.length ? fmtA(mean(listB))    : "—";
+    document.getElementById('avgC').textContent   = listC.length ? fmtA(mean(listC))    : "—";
+    document.getElementById('avgSSD').textContent = listSSD.length ? fmt3(mean(listSSD)) : "—";
+  }
+
+  // ====== 1行目の C(かご) を他行へ転記（手入力は保護） ======
+  function getFirstCBasket(){
+    const first = document.querySelector('#dataBody tr:first-child input[data-key="C_kago"]');
+    return first ? first.value : '';
+  }
+  function propagateCBasketFromFirst(){
+    const base = getFirstCBasket();
+    if (!base) return;
+    const rows = document.querySelectorAll('#dataBody tr');
+    rows.forEach((tr, idx) => {
+      if (idx === 0) return;
+      const inp = tr.querySelector('input[data-key="C_kago"]');
+      if (!inp) return;
+      if (inp.dataset.manual === 'true') return; // 手入力保護
+      inp.value = base;
+      inp.dataset.autofilled = 'true';
+    });
+  }
+  document.getElementById('dataBody').addEventListener('input', (e) => {
+    const t = e.target;
+    if (t.matches('#dataBody tr:first-child input[data-key="C_kago"]')) {
+      propagateCBasketFromFirst();
+    }
+  });
+  document.getElementById('dataBody').addEventListener('input', (e) => {
+    const t = e.target;
+    if (t.matches('input[data-key="C_kago"]')) {
+      const first = document.querySelector('#dataBody tr:first-child input[data-key="C_kago"]');
+      if (t !== first) t.dataset.manual = 'true';
+    }
+  });
+  function initNewRowCBasket(tr){
+    const inp = tr.querySelector('input[data-key="C_kago"]');
+    if (!inp) return;
+    const base = getFirstCBasket();
+    if (base) {
+      inp.value = base;
+      inp.dataset.autofilled = 'true';
+    }
+  }
+
+  /* ====== 保存機能（localStorage）＋拡張項目 ====== */
+  const LS_KEY_STATE = 'JIS_A1110_state_v2';
+
+  function getMeta(){
+    return {
+      subject: (document.getElementById('subject')?.value || '').trim(),
+      tester:  (document.getElementById('tester')?.value || '').trim(),
+      temp:    (document.getElementById('waterTemp')?.value || '').trim(),
+      rho:     (document.getElementById('rhoW')?.value || '').trim(),
+      useRho:  !!document.getElementById('useRho')?.checked,
+      company: (document.getElementById('company')?.value || '').trim(),
+      projectId: (document.getElementById('projectId')?.value || '').trim(),
+      lotNo:     (document.getElementById('lotNo')?.value || '').trim(),
+      materialName: (document.getElementById('materialName')?.value || '').trim(),
+      testDate: (document.getElementById('testDate')?.value || '').trim(),
+      location: (document.getElementById('location')?.value || '').trim(),
+      remarks:  (document.getElementById('remarks')?.value || '').trim()
+    };
+  }
+  function applyMeta(m){
+    if (!m || typeof m !== 'object') return;
+    const setVal = (id, v) => { const el = document.getElementById(id); if (el != null) el.value = v ?? ''; };
+    setVal('subject', m.subject);
+    setVal('tester',  m.tester);
+    setVal('waterTemp', m.temp);
+    setVal('rhoW', m.rho);
+    const chk = document.getElementById('useRho'); if (chk) chk.checked = !!m.useRho;
+    setVal('company', m.company);
+    setVal('projectId', m.projectId);
+    setVal('lotNo', m.lotNo);
+    setVal('materialName', m.materialName);
+    setVal('testDate', m.testDate);
+    setVal('location', m.location);
+    setVal('remarks', m.remarks);
+  }
+
+  function collectRows(){
+    const rows = [];
+    document.querySelectorAll('#dataBody tr').forEach(tr => {
+      const cells = tr.querySelectorAll('td input');
+      rows.push({
+        id:   cells[0]?.value ?? '',
+        aTot: cells[1]?.value ?? '',
+        aCon: cells[2]?.value ?? '',
+        bTot: cells[3]?.value ?? '',
+        bCon: cells[4]?.value ?? '',
+        cTot: cells[5]?.value ?? '',
+        cBag: cells[6]?.value ?? ''
+      });
+    });
+    return rows;
+  }
+  function rebuildRows(rows){
+    document.getElementById('dataBody').innerHTML = '';
+    if (!Array.isArray(rows) || !rows.length){ addRow('Sample1'); return; }
+    rows.forEach(r => { addRow(r.id, r.aTot, r.aCon, r.bTot, r.bCon, r.cTot, r.cBag); });
+    propagateCBasketFromFirst();
+  }
+
+  function setStatus(msg){
+    const el = document.getElementById('saveStatus');
+    if (!el) return;
+    el.textContent = msg || '';
+    if (msg) {
+      el.style.opacity = '1';
+      setTimeout(() => { el.style.opacity = '0.85'; }, 50);
+      setTimeout(() => { el.textContent=''; el.style.opacity='1'; }, 3500);
+    }
+  }
+
+  function saveState(){
+    try {
+      const meta = getMeta();
+      const saveRows = !!document.getElementById('saveRowsToggle')?.checked;
+      const state = { version: 2, meta, rows: saveRows ? collectRows() : [] };
+      localStorage.setItem(LS_KEY_STATE, JSON.stringify(state));
+      setStatus(saveRows ? '識別情報＋試料行を保存しました。' : '識別情報を保存しました。');
+    } catch(e) { setStatus('保存に失敗しました。'); console.error(e); }
+  }
+  function loadState(){
+    try {
+      const v = localStorage.getItem(LS_KEY_STATE);
+      if (!v) { setStatus('保存情報がありません。'); return; }
+      const state = JSON.parse(v);
+      if (state.meta) applyMeta(state.meta);
+      if (Array.isArray(state.rows) && state.rows.length){ rebuildRows(state.rows); }
+      calcAll();
+      setStatus('保存情報を読み込みました。');
+    } catch(e) { setStatus('読み込みに失敗しました。'); console.error(e); }
+  }
+  function clearState(){
+    try { localStorage.removeItem(LS_KEY_STATE); setStatus('保存情報を削除しました。'); }
+    catch(e){ setStatus('削除に失敗しました。'); console.error(e); }
+  }
+
+  // ====== 自動保存のON/OFF（識別情報＋任意で行） ======
+  let autoSaveBound = false;
+  function bindAutoSave(){
+    if (autoSaveBound) return;
+    autoSaveBound = true;
+    ['subject','tester','waterTemp','rhoW','company','projectId','lotNo','materialName','testDate','location','remarks']
+      .forEach(id => { const el = document.getElementById(id); if (el) el.addEventListener('input', saveState); });
+    const chkRho = document.getElementById('useRho'); if (chkRho) chkRho.addEventListener('change', saveState);
+    if (document.getElementById('saveRowsToggle')?.checked){
+      const body = document.getElementById('dataBody');
+      body.addEventListener('input', saveState);
+    }
+    setStatus('自動保存を有効にしました。');
+  }
+  function unbindAutoSave(){
+    if (!autoSaveBound) return;
+    autoSaveBound = false;
+    ['subject','tester','waterTemp','rhoW','company','projectId','lotNo','materialName','testDate','location','remarks']
+      .forEach(id => { const el = document.getElementById(id); if (el) el.removeEventListener('input', saveState); });
+    const chkRho = document.getElementById('useRho'); if (chkRho) chkRho.removeEventListener('change', saveState);
+    document.getElementById('dataBody').removeEventListener('input', saveState);
+    setStatus('自動保存を無効にしました。');
+  }
+
+  /* ====== 印刷（PDF）1ページ化＋ヘッダー投入＋タイトル差し替え ====== */
+  const A4PX = { w: 794, h: 1123 }; // 210×297mm @ 96dpi
+  function fillPrintHeader(){
+    const m = getMeta();
+    const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val || ''; };
+    set('phSubject', m.subject);
+    set('phTester',  m.tester);
+    set('phTemp',    m.temp);
+    set('phRho',     m.rho);
+    const extOn = !!document.getElementById('extMetaToPrintToggle')?.checked;
+    const phExtra = document.getElementById('phExtra');
+    if (phExtra) {
+      phExtra.innerHTML = '';
+      if (extOn){
+        const rows = [
+          ['会社名', m.company], ['案件番号', m.projectId], ['ロット番号', m.lotNo],
+          ['材料（試料）名', m.materialName], ['試験日', m.testDate], ['試験場所', m.location], ['備考', m.remarks]
+        ];
+        rows.forEach(([k,v]) => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <th style="text-align:left; padding:.2rem .3rem; border:1px solid #e0e6eb;">${k}</th>
+            <td style="padding:.2rem .3rem; border:1px solid #e0e6eb;">${(v||'')}</td>
+          `;
+          phExtra.appendChild(tr);
+        });
+      }
+    }
+    const ph = document.getElementById('printHeader');
+    if (ph) ph.style.display = 'block';
+  }
+  function preparePrintOnePage(){
+    const root = document.querySelector('.container');
+    if (!root) return;
+    root.style.transformOrigin = 'top left';
+    const rect = root.getBoundingClientRect();
+    const scale = Math.min(A4PX.w/rect.width, A4PX.h/rect.height);
+    root.dataset.prevTransform = root.style.transform || '';
+    root.style.transform = `scale(${scale})`;
+  }
+  function cleanupPrint(){
+    const root = document.querySelector('.container');
+    if (root){ root.style.transform = root.dataset.prevTransform || ''; }
+    const ph = document.getElementById('printHeader');
+    if (ph) ph.style.display = 'none';
+  }
+  function printPDF(){
+    const meta = getMeta();
+    const oldTitle = document.title;
+    if (meta.subject || meta.tester){
+      document.title = `${meta.subject || 'JIS_A1110'}_${meta.tester || ''}`.replace(/\s+/g,'_');
+    }
+    fillPrintHeader();
+    preparePrintOnePage();
+    window.print();
+    window.addEventListener('afterprint', () => {
+      document.title = oldTitle;
+      cleanupPrint();
+    }, { once: true });
+  }
+
+  /* ====== CSV生成（メタ行＋データ）＋BOM付与でExcel対策 ====== */
+  function buildCsv(){
+    const m = getMeta();
+    const extOn = !!document.getElementById('extMetaToCsvToggle')?.checked;
+    const lines = [];
+    lines.push(`件名,${m.subject}`);
+    lines.push(`試験者,${m.tester}`);
+    lines.push(`水温(℃),${m.temp},ρw(g/cm³),${m.rho},水密度補正,${m.useRho ? '使用' : '不使用'}`);
+    if (extOn){
+      lines.push(`会社名,${m.company}`);
+      lines.push(`案件番号,${m.projectId}`);
+      lines.push(`ロット番号,${m.lotNo}`);
+      lines.push(`材料（試料）名,${m.materialName}`);
+      lines.push(`試験日,${m.testDate}`);
+      lines.push(`試験場所,${m.location}`);
+      lines.push(`備考,${m.remarks}`);
+    }
+    lines.push('');
+    lines.push(['試料名/ID','A_total(g)','A_容器(g)','B_total(g)','B_容器(g)','C_total(g)','C_かご(g)'].join(','));
+    Array.from(document.querySelectorAll('#dataBody tr')).forEach(tr => {
+      const cells = tr.querySelectorAll('td input');
+      const row = [
+        cells[0]?.value ?? '',
+        cells[1]?.value ?? '',
+        cells[2]?.value ?? '',
+        cells[3]?.value ?? '',
+        cells[4]?.value ?? '',
+        cells[5]?.value ?? '',
+        cells[6]?.value ?? ''
+      ].map(s => {
+        s = String(s ?? '');
+        return /,|"/.test(s) ? `"${s.replace(/"/g,'""')}"` : s;
+      });
+      lines.push(row.join(','));
+    });
+    lines.push('');
+    lines.push(['試料名/ID','乾燥質量A(g)','表乾質量B(g)','水中質量C(g)','表乾密度SSD(g/cm³)','絶乾密度OD(g/cm³)','見掛密度App(g/cm³)','吸水率Abs(%)'].join(','));
+    Array.from(document.querySelectorAll('#resBody tr')).forEach(tr => {
+      const cells = Array.from(tr.querySelectorAll('td')).map(td => {
+        const txt = (td.textContent || '').trim();
+        return /,|"/.test(txt) ? `"${txt.replace(/"/g,'""')}"` : txt;
+      });
+      lines.push(cells.join(','));
+    });
+    lines.push('');
+    lines.push([
+      '統計',
+      'avg_A(g)', document.getElementById('avgA')?.textContent ?? '—',
+      'avg_B(g)', document.getElementById('avgB')?.textContent ?? '—',
+      'avg_C(g)', document.getElementById('avgC')?.textContent ?? '—',
+      'avg_SSD(g/cm³)', document.getElementById('avgSSD')?.textContent ?? '—',
+      'avg_OD(g/cm³)', document.getElementById('avgOD')?.textContent ?? '—',
+      'avg_App(g/cm³)', document.getElementById('avgApp')?.textContent ?? '—',
+      'avg_Abs(%)', document.getElementById('avgAbs')?.textContent ?? '—'
+    ].join(','));
+    return lines.join('\r\n');
+  }
+  function downloadCsv(filename, csvText){
+    const blob = new Blob(['\ufeff' + csvText], { type: 'text/csv;charset=utf-8;' }); // BOM付与
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    URL.revokeObjectURL(a.href);
+    document.body.removeChild(a);
+  }
+  function exportCSV(){
+    const m = getMeta();
+    const date = new Date().toISOString().slice(0,10);
+    const fname = `${(m.subject || 'JIS_A1110').replace(/\s+/g,'_')}_${(m.tester || 'tester').replace(/\s+/g,'_')}_${date}.csv`;
+    const csv = buildCsv();
+    downloadCsv(fname, csv);
+  }
+
+  /* ====== サンプル投入／リセット ====== */
+  function fillSample(){
+    document.getElementById('dataBody').innerHTML = "";
+    addRow("Sample1", 3335.5, 885.9, 3460.7, 885.9, 1922.6, 387.7);
+    addRow("Sample2", 3348.4, 887.3, 3474.6, 887.3, 1928.6, 387.7);
+    document.getElementById('useRho').checked = true;
+    document.getElementById('waterTemp').value = "18.0";
+    document.getElementById('rhoW').value = "";
+    calcAll();
+    propagateCBasketFromFirst();
+  }
+  function resetAll(){
+    document.getElementById('dataBody').innerHTML = "";
+    addRow("試料1");
+    document.getElementById('useRho').checked = false;
+    ["waterTemp","rhoW"].forEach(id => { const el = document.getElementById(id); if (el) el.value=""; });
+    document.getElementById('resBody').innerHTML = "";
+    ["avgA","avgB","avgC","avgSSD","avgOD","avgApp","avgAbs"].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.textContent="—";
+    });
+    ["subject","tester","company","projectId","lotNo","materialName","testDate","location","remarks"]
+      .forEach(id => { const el = document.getElementById(id); if (el) el.value=""; });
+    showErr("");
+  }
+
+  /* ====== イベント配線 ====== */
+  document.getElementById('addRowBtn').addEventListener('click', () => {
+    addRow(`Sample${document.querySelectorAll('#dataBody tr').length+1}`);
+    propagateCBasketFromFirst();
+    if (document.getElementById('enableSave')?.checked && document.getElementById('saveRowsToggle')?.checked){
+      saveState();
+    }
+  });
+  document.getElementById('sampleBtn').addEventListener('click', fillSample);
+  document.getElementById('calcBtn').addEventListener('click', calcAll);
+  document.getElementById('resetBtn').addEventListener('click', resetAll);
+  document.getElementById('exportCsvBtn').addEventListener('click', exportCSV);
+  document.getElementById('printBtn').addEventListener('click', printPDF);
+
+  // 保存機能
+  document.getElementById('saveMetaBtn').addEventListener('click', saveState);
+  document.getElementById('loadMetaBtn').addEventListener('click', loadState);
+  document.getElementById('clearMetaBtn').addEventListener('click', clearState);
+  document.getElementById('enableSave').addEventListener('change', (e) => {
+    if (e.target.checked) bindAutoSave(); else unbindAutoSave();
+  });
+
+  // 起動時：保存済みがある場合はステータス表示のみ（自動読み込みはしません）
+  if (localStorage.getItem('JIS_A1110_state_v2')) {
+    setStatus('保存済みの識別情報があります。（［読み込み］で反映）');
+  }
+
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./service-worker.js')
+               .catch(err => console.error('SW registration failed:', err));
+    });
+  }
+
+</script>
+</body>
+</html>
