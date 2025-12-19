@@ -1,0 +1,532 @@
+
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>変水位法（Falling Head）透水係数 k 計算フォーム（スタンドパイプ内径→断面積 自動計算付き）</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<style>
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif;
+    max-width: 1000px; margin: 24px auto; padding: 0 16px; line-height: 1.6;
+  }
+  h1 { font-size: 1.35rem; margin-bottom: 8px; }
+  fieldset { border: 1px solid #d0d7de; padding: 12px; margin-bottom: 16px; }
+  legend { font-weight: 600; }
+  label { display:block; margin-top: 10px; }
+  input, select, button, output { width: 100%; padding: 8px; box-sizing: border-box; }
+  .note { font-size: 0.92em; color: #555; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
+  .btn { cursor: pointer; }
+
+  /* —— 3列レイアウト（レスポンシブ） —— */
+  .grid3 {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+  }
+  @media (max-width: 900px) {
+    .grid3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (max-width: 600px) {
+    .grid3 { grid-template-columns: 1fr; }
+  }
+
+  /* —— 入力の基本スタイル —— */
+  input:focus, select:focus {
+    outline: none;
+    border-color: #0969da;
+    box-shadow: 0 0 0 2px rgba(9,105,218,0.15);
+  }
+
+  /* —— 未入力（エラー）の赤枠 —— */
+  .is-empty {
+    border: 2px solid #d32f2f !important;
+    box-shadow: 0 0 0 2px rgba(211,47,47,0.15) !important;
+  }
+  /* ネイティブの必須・未入力も反映（補助） */
+  input:required:invalid, select:required:invalid {
+    border: 2px solid #d32f2f;
+  }
+
+  /* 出力枠 */
+  .output {
+    margin-top: 16px; padding: 12px; background: #f6f8fa; border: 1px solid #d0d7de;
+  }
+</style>
+</head>
+
+<body>
+<h1>土の透水試験（変水位法）— 透水係数 k（m/s）計算［スタンドパイプ内径→断面積 自動計算付き］</h1>
+<p class="note">
+  使用式：<code class="mono">k = (a · L) / (A · t) · ln(h₁ / h₂)</code>（出力：m/s）<br>
+  参考：Geotechdata.info（変水位法の式・手順）／JIS A 1218:2020（試験方法・計算）。10進対数を使う資料では <code>k = (2.303 · a · L)/(A · t) · log₁₀(h₁/h₂)</code> と等価です。12
+</p>
+
+<!-- 幾何の自動計算：供試体／スタンドパイプ -->
+<fieldset>
+  <legend>幾何の自動計算（円筒の直径から断面積を自動算出）</legend>
+  <p class="note">円筒断面：<code class="mono">A = π D² / 4</code>、スタンドパイプ断面：<code class="mono">a = π d² / 4</code>。</p>
+
+  <!-- 供試体：3列 -->
+  <div class="grid3">
+    <div>
+      <label>試料（供試体）直径 D
+        <input id="Dsample" type="number" step="any" placeholder="例：10.00">
+      </label>
+    </div>
+    <div>
+      <label>D の単位
+        <select id="Dunit">
+          <option value="cm">cm</option>
+          <option value="m">m</option>
+        </select>
+      </label>
+    </div>
+    <div>
+      <label>（計算結果）供試体断面積 A
+        <output id="Acalc" class="mono">—</output>
+      </label>
+    </div>
+  </div>
+
+  <div style="margin-top:10px">
+    <button id="reflectA" class="btn">Aに反映（下の A 入力欄へ単位系に合わせてセット）</button>
+  </div>
+
+  <hr style="margin:16px 0">
+
+  <!-- スタンドパイプ：3列 -->
+  <div class="grid3">
+    <div>
+      <label>スタンドパイプ内径 d<sub>sp</sub>
+        <input id="Dsp" type="number" step="any" placeholder="例：1.003">
+      </label>
+    </div>
+    <div>
+      <label>d<sub>sp</sub> の単位
+        <select id="DspUnit">
+          <option value="cm">cm</option>
+          <option value="m">m</option>
+        </select>
+      </label>
+    </div>
+    <div>
+      <label>（計算結果）スタンドパイプ断面積 a
+        <output id="Aspcalc" class="mono">—</output>
+      </label>
+    </div>
+  </div>
+</fieldset>
+
+<!-- 単位系・温度補正 -->
+<fieldset>
+  <legend>単位系・（任意）水温補正</legend>
+  <div class="grid3">
+    <div>
+      <label>単位系（長さ・面積）
+        <select id="lenUnits">
+          <option value="cm">センチメートル系（L,h: cm／A,a: cm² → 自動で SI に換算）</option>
+          <option value="m">メートル系（L,h: m／A,a: m²）</option>
+        </select>
+      </label>
+    </div>
+    <div>
+      <label>（任意）水温 T［℃］・基準（補正）
+        <div class="grid3">
+          <input id="temp" type="number" step="any" placeholder="例：20">
+          <select id="Tref">
+            <option value="15">基準 15℃</option>
+            <option value="20">基準 20℃</option>
+          </select>
+          <div></div>
+        </div>
+      </label>
+    </div>
+    <div></div>
+  </div>
+  <p class="note">温度補正：<code class="mono">k_ref = k_T · (μ_T / μ_ref)</code>（動粘度 μ）。概略値テーブルで 15–30℃近傍に対応。詳細は規格・技術資料の粘度表をご参照。[</p>
+</fieldset>
+
+<!-- 試験入力 -->
+<fieldset>
+  <legend>試験入力（変水位法の測定値）</legend>
+
+  <!-- L / A / a を3列 -->
+  <div class="grid3">
+    <div>
+      <label>試料長 L
+        <input id="L" type="number" step="any" placeholder="例：12.73" required>
+      </label>
+    </div>
+    <div>
+      <label>供試体断面積 A（円筒なら A=πD²/4）
+        <input id="A" type="number" step="any" placeholder="例：7.854e-4" required>
+      </label>
+    </div>
+    <div>
+      <label>スタンドパイプ断面積 a（内径から自動計算可）
+        <input id="a" type="number" step="any" placeholder="例：7.854e-5" required>
+      </label>
+    </div>
+  </div>
+
+  <!-- 時間ブロックを3列：モード選択／t（秒）／日時計算領域 -->
+  <div class="grid3">
+    <div>
+      <label>時間 t（秒）モード
+        <select id="tMode">
+          <option value="fromDatetime">日時1・日時2から計算</option>
+          <option value="manual">直接入力</option>
+        </select>
+      </label>
+    </div>
+    <div>
+      <label>（直接入力）t（秒）
+        <input id="t" type="number" step="any" placeholder="例：120">
+      </label>
+    </div>
+    <div id="dtCalcArea" style="display:none">
+      <label>日時1（開始）
+        <input id="dt1" type="datetime-local">
+      </label>
+      <label>日時2（終了）
+        <input id="dt2" type="datetime-local">
+      </label>
+      <div class="note mono" id="tPreview">t = — s</div>
+    </div>
+  </div>
+
+  <!-- 水位 h1 / h2 を3列（右1列はスペース） -->
+  <div class="grid3">
+    <div>
+      <label>初期水位 h₁
+        <input id="h1" type="number" step="any" placeholder="例：20.5" required>
+      </label>
+    </div>
+    <div>
+      <label>最終水位 h₂（h₂ &lt; h₁）
+        <input id="h2" type="number" step="any" placeholder="例：10.5" required>
+      </label>
+    </div>
+    <div></div>
+  </div>
+</fieldset>
+
+<!-- ボタン行：3列化（A反映／a反映／計算） -->
+<div class="grid3">
+  <button id="reflect_a" class="btn">aに反映（内径から計算した a をセット）</button>
+  <button id="reflectA" class="btn">Aに反映（直径から計算した A をセット）</button>
+  <button id="calc" class="btn">計算する</button>
+</div>
+
+<div class="output" id="result"></div>
+
+<p class="note">
+  ★ 単位換算ルール：<br>
+  ・長さ／面積が <b>cm系</b>の場合：<code class="mono">L,h → ×1e-2</code>、<code class="mono">A,a → ×1e-4</code> として SI（m,s）に統一。<br>
+  ・出力は常に <b>m/s</b>。<br>
+  ・水位は同一基準で計測し、<b>h₂ &lt; h₁</b> を必ず確認してください。1
+</p>
+
+<script>
+/* ===== 単位換算（長さ・面積 → SI）===== */
+function to_SI_lengths(val, units, kind) {
+  // kind: 'Lh'（L,h）なら ×1e-2（cm→m）、'A'/'a'なら ×1e-4（cm²→m²）
+  if (!Number.isFinite(val)) return NaN;
+  if (units === 'm') return val;
+  if (units === 'cm') {
+    if (kind === 'Lh') return val * 1e-2;
+    if (kind === 'A' || kind === 'a') return val * 1e-4;
+  }
+  return NaN;
+}
+
+/* ===== 幾何の自動計算（円筒：A = π D² / 4、 a = π d² / 4）===== */
+const Dsample     = document.getElementById('Dsample');
+const Dunit       = document.getElementById('Dunit');
+const AcalcOut    = document.getElementById('Acalc');
+const reflectABtn = document.getElementById('reflectA');
+
+const Dsp         = document.getElementById('Dsp');
+const DspUnit     = document.getElementById('DspUnit');
+const AspcalcOut  = document.getElementById('Aspcalc');
+const reflect_aBtn= document.getElementById('reflect_a');
+
+const lenUnitsSel = document.getElementById('lenUnits');
+const Ainput      = document.getElementById('A');
+const aInput      = document.getElementById('a');
+
+function updateGeom() {
+  // 供試体断面積 A
+  const Dv = parseFloat(Dsample.value);
+  if (Number.isFinite(Dv) && Dv > 0) {
+    const D_m  = (Dunit.value === 'm') ? Dv : Dv * 1e-2;
+    const A_m2 = Math.PI * Math.pow(D_m, 2) / 4;
+    const A_cm2= A_m2 * 1e4;
+    AcalcOut.textContent = `${A_m2.toExponential(6)} m²  /  ${A_cm2.toExponential(6)} cm²`;
+    AcalcOut.dataset.A_m2 = A_m2;
+  } else {
+    AcalcOut.textContent = '—';
+    AcalcOut.dataset.A_m2 = '';
+  }
+  // スタンドパイプ断面積 a
+  const Dspv = parseFloat(Dsp.value);
+  if (Number.isFinite(Dspv) && Dspv > 0) {
+    const d_m   = (DspUnit.value === 'm') ? Dspv : Dspv * 1e-2;
+    const a_m2  = Math.PI * Math.pow(d_m, 2) / 4;
+    const a_cm2 = a_m2 * 1e4;
+    AspcalcOut.textContent = `${a_m2.toExponential(6)} m²  /  ${a_cm2.toExponential(6)} cm²`;
+    AspcalcOut.dataset.a_m2 = a_m2;
+  } else {
+    AspcalcOut.textContent = '—';
+    AspcalcOut.dataset.a_m2 = '';
+  }
+}
+[Dsample, Dunit, Dsp, DspUnit].forEach(el => el.addEventListener('input', updateGeom));
+updateGeom();
+
+// 「Aに反映」— 現在の長さ単位系に合わせて A 入力欄へセット
+reflectABtn.addEventListener('click', () => {
+  const A_m2_str = AcalcOut.dataset.A_m2;
+  if (!A_m2_str) { alert('試料直径 D を入力してください。'); return; }
+  const A_m2 = parseFloat(A_m2_str);
+  if (lenUnitsSel.value === 'm') Ainput.value = A_m2;
+  else Ainput.value = A_m2 * 1e4; // cm²へ
+});
+
+// 「aに反映」— 現在の長さ単位系に合わせて a 入力欄へセット
+reflect_aBtn.addEventListener('click', () => {
+  const a_m2_str = AspcalcOut.dataset.a_m2;
+  if (!a_m2_str) { alert('スタンドパイプ内径 d を入力してください。'); return; }
+  const a_m2 = parseFloat(a_m2_str);
+  if (lenUnitsSel.value === 'm') aInput.value = a_m2;
+  else aInput.value = a_m2 * 1e4; // cm²へ
+});
+
+/* ===== 時間 t 入力：直接入力 or 日時から計算 ===== */
+const tModeSel   = document.getElementById('tMode');
+const tInput     = document.getElementById('t');
+const dtCalcArea = document.getElementById('dtCalcArea');
+const dt1Input   = document.getElementById('dt1');
+const dt2Input   = document.getElementById('dt2');
+const tPreview   = document.getElementById('tPreview');
+
+// モード切替（UI）
+function updateTMode() {
+  const isDatetime = (tModeSel.value === 'fromDatetime');
+  dtCalcArea.style.display = isDatetime ? '' : 'none';
+  tInput.readOnly  = isDatetime;
+  tInput.placeholder = isDatetime ? '日時から自動計算' : '例：120';
+  if (!isDatetime) tPreview.textContent = 't = — s';
+}
+
+// 必須切替（モードに応じて）
+function applyTimeModeRequired() {
+  const mode = tModeSel.value;
+  if (mode === 'manual') {
+    tInput.required = true;
+    dt1Input.required = false;
+    dt2Input.required = false;
+  } else {
+    tInput.required = false;
+    dt1Input.required = true;
+    dt2Input.required = true;
+  }
+}
+
+// HH:MM:SS 文字列
+function formatHHMMSS(totalSeconds) {
+  const s = Math.floor(totalSeconds);
+  const hh = String(Math.floor(s / 3600)).padStart(2, '0');
+  const mm = String(Math.floor((s % 3600) / 60)).padStart(2, '0');
+  const ss = String(s % 60).padStart(2, '0');
+  return `${hh}:${mm}:${ss}`;
+}
+
+// 現在のモードに従って t（秒）を返す。
+// ・manual：t 入力欄の値
+// ・fromDatetime：dt1/dt2 の差分を秒で算出して t 入力欄に反映
+function computeTSeconds() {
+  if (tModeSel.value === 'manual') {
+    const v = parseFloat(tInput.value);
+    return Number.isFinite(v) && v > 0 ? v : NaN;
+  }
+  // 日時から計算
+  const v1 = dt1Input.value;
+  const v2 = dt2Input.value;
+  if (!v1 || !v2) return NaN;
+
+  // datetime-local はローカル時刻として Date に解釈
+  const dt1 = new Date(v1);
+  const dt2 = new Date(v2);
+  const deltaSec = (dt2.getTime() - dt1.getTime()) / 1000;
+
+  if (!Number.isFinite(deltaSec) || deltaSec <= 0) {
+    // 開始 >= 終了 の場合は不正
+    return NaN;
+  }
+  // t 入力欄へ自動反映（読み取り専用）
+  tInput.value = deltaSec;
+  tPreview.textContent = `t = ${deltaSec.toFixed(3)} s（${formatHHMMSS(deltaSec)}）`;
+  return deltaSec;
+}
+
+// イベント設定（モード更新＋自動計算）
+[tModeSel, dt1Input, dt2Input].forEach(el => {
+  el.addEventListener('input', () => {
+    updateTMode();
+    applyTimeModeRequired();
+    if (tModeSel.value === 'fromDatetime') computeTSeconds();
+    // 強調更新
+    [tInput, dt1Input, dt2Input].forEach(markEmpty);
+  });
+});
+updateTMode();
+applyTimeModeRequired();
+
+/* ===== 未入力の赤枠表示（リアルタイム）===== */
+// 対象の未入力判定
+function isValueEmpty(el) {
+  const type = (el.getAttribute('type') || '').toLowerCase();
+  if (el.tagName === 'SELECT') return el.value === '';
+  if (el.tagName === 'OUTPUT') return false;
+
+  const v = el.value.trim();
+  if (v === '') return true;
+
+  if (type === 'number') {
+    const num = parseFloat(v);
+    return !Number.isFinite(num);
+  }
+  return false;
+}
+
+function markEmpty(el) {
+  const need = el.required || el.dataset.required === 'true';
+  if (!need) { el.classList.remove('is-empty'); return; }
+  if (isValueEmpty(el)) el.classList.add('is-empty');
+  else el.classList.remove('is-empty');
+}
+
+function refreshAllRequiredHighlights() {
+  const targets = document.querySelectorAll('input, select, textarea');
+  targets.forEach(markEmpty);
+}
+
+// 入力イベントで随時強調
+document.addEventListener('input', (e) => {
+  const el = e.target;
+  if (el.matches('input, select, textarea')) markEmpty(el);
+});
+document.addEventListener('change', (e) => {
+  const el = e.target;
+  if (el.matches('input, select, textarea')) markEmpty(el);
+});
+
+// 初期描画時に一括チェック
+window.addEventListener('DOMContentLoaded', refreshAllRequiredHighlights);
+
+/* ===== 水の動粘度（mPa·s）の簡易近似テーブル（15–30℃）===== */
+const mu = { // 概略値
+  15: 1.138, 16: 1.106, 17: 1.076, 18: 1.047, 19: 1.020,
+  20: 1.002, 21: 0.985, 22: 0.969, 23: 0.954, 24: 0.939,
+  25: 0.925, 26: 0.912, 27: 0.899, 28: 0.887, 29: 0.875, 30: 0.864
+};
+
+/* ===== 計算ボタン ===== */
+document.getElementById('calc').addEventListener('click', () => {
+  // 未入力の赤枠チェック（先に止める）
+  refreshAllRequiredHighlights();
+  const firstEmpty = document.querySelector('.is-empty');
+  if (firstEmpty) {
+    firstEmpty.focus();
+    alert('未入力の必須項目があります。赤枠の入力欄を確認してください。');
+    return;
+  }
+
+  // 1) 入力取得
+  const L_in  = parseFloat(document.getElementById('L').value);
+  let   A_in  = parseFloat(Ainput.value);
+  let   a_in  = parseFloat(aInput.value);
+  const t_in  = computeTSeconds(); // モードに応じて
+  const h1_in = parseFloat(document.getElementById('h1').value);
+  const h2_in = parseFloat(document.getElementById('h2').value);
+
+  // 未入力補助：A, a が未入力なら幾何計算値を利用
+  if (!Number.isFinite(A_in) || A_in <= 0) {
+    const A_m2_str = AcalcOut.dataset.A_m2;
+    if (A_m2_str) {
+      const A_m2_auto = parseFloat(A_m2_str);
+      A_in = (lenUnitsSel.value === 'm') ? A_m2_auto : A_m2_auto * 1e4;
+    }
+  }
+  if (!Number.isFinite(a_in) || a_in <= 0) {
+    const a_m2_str = AspcalcOut.dataset.a_m2;
+    if (a_m2_str) {
+      const a_m2_auto = parseFloat(a_m2_str);
+      a_in = (lenUnitsSel.value === 'm') ? a_m2_auto : a_m2_auto * 1e4;
+    }
+  }
+
+  // 2) SIへ換算
+  const units = lenUnitsSel.value;
+  const L_m  = to_SI_lengths(L_in, units, 'Lh');
+  const A_m2 = to_SI_lengths(A_in, units, 'A');
+  const a_m2 = to_SI_lengths(a_in, units, 'a');
+  const h1_m = to_SI_lengths(h1_in, units, 'Lh');
+  const h2_m = to_SI_lengths(h2_in, units, 'Lh');
+  const t_s  = t_in; // すでに秒
+
+  // 3) 入力チェック
+  const ok = [L_m, A_m2, a_m2, t_s, h1_m, h2_m].every(v => Number.isFinite(v) && v > 0);
+  if (!ok || !(h2_m < h1_m)) {
+    document.getElementById('result').innerHTML =
+      '⚠️ 入力値（L, A, a, t, h₁, h₂）をすべて正の数で、かつ h₂ &lt; h₁ となるように入力してください。' +
+      '<br>・t は秒、L/h は m または cm、A/a は m² または cm² で入力。';
+    return;
+  }
+
+  // 4) 変水位法：k = (a · L)/(A · t) · ln(h₁/h₂)
+  const k = (a_m2 * L_m) / (A_m2 * t_s) * Math.log(h1_m / h2_m); // [m/s]
+
+  let msg = `<b>k = ${k.toExponential(6)} m/s</b>`;
+
+  // 5) 温度補正（任意）：k_ref = k_T · (μ_T / μ_ref)
+  const T  = parseFloat(document.getElementById('temp').value);
+  const Tr = parseInt(document.getElementById('Tref').value, 10);
+  const muT = mu[Math.round(T)];
+  const muR = mu[Tr];
+  if (Number.isFinite(T) && muT && muR) {
+    const k_ref = k * (muT / muR);
+    msg += `<br>温度補正（基準 ${Tr}℃）：<b>k<sub>${Tr}</sub> = ${k_ref.toExponential(6)} m/s</b>（T≈${Math.round(T)}℃）`;
+  } else if (Number.isFinite(T)) {
+    msg += '<br>※温度補正は 15–30℃近傍の概略値のみ対応。詳細は規格や技術資料の粘度表をご参照ください。';
+  }
+
+  // 6) 幾何計算の要約（表示用）
+  const A_m2_str = AcalcOut.dataset.A_m2;
+  const a_m2_str = AspcalcOut.dataset.a_m2;
+  if (A_m2_str) {
+    const A_auto_m2 = parseFloat(A_m2_str);
+    msg += `<br><br><span class="note">供試体断面積（直径から計算）：A=${A_auto_m2.toExponential(6)} m²</span>`;
+  }
+  if (a_m2_str) {
+    const a_auto_m2 = parseFloat(a_m2_str);
+    msg += `<br><span class="note">スタンドパイプ断面積（内径から計算）：a=${a_auto_m2.toExponential(6)} m²</span>`;
+  }
+
+  // 7) 入力の要約（SI換算）
+  msg += `<br><br><span class="note">入力（SI換算）：L=${L_m} m, A=${A_m2} m², a=${a_m2} m², t=${t_s} s, h₁=${h1_m} m, h₂=${h2_m} m</span>`;
+  document.getElementById('result').innerHTML = msg;
+});
+</script>
+
+<hr>
+<p class="note">
+  ■ 技術メモ：変水位法は、低〜中程度の透水性（シルト・粘性土など）に適用し、スタンドパイプの水位が <b>h₁ → h₂</b> に低下する間の時間 <b>t</b> 等を用いて
+  <code class="mono">k = (a · L)/(A · t) · ln(h₁/h₂)</code> で求めます。10進対数版は <code class="mono">2.303 · log₁₀</code> を用いる等価式です。試験の事前飽和・繰り返し計測などの注意は各規格・解説をご参照ください。12
+</p>
+</body>
+</
