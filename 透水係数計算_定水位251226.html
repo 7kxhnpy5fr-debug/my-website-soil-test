@@ -1,0 +1,999 @@
+
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>定水位法（Constant Head）透水係数 k 計算フォーム（幾何自動計算・出力機能付き）</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --bg: #ffffff;
+    --text: #0f172a;
+    --muted: #64748b;
+    --border: #d0d7de;
+    --soft: #f6f8fa;
+    --primary: #2563eb;
+    --primary-hover: #1d4ed8;
+    --danger: #d93025;
+    --radius: 10px;
+    --shadow: 0 2px 10px rgba(2, 6, 23, 0.06);
+  }
+
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif;
+    max-width: 1100px; margin: 24px auto; padding: 0 16px; line-height: 1.7;
+    color: var(--text); background: var(--bg);
+  }
+  h1 { font-size: 1.35rem; margin-bottom: 8px; }
+  fieldset {
+    border: 1px solid var(--border); padding: 14px; margin-bottom: 18px;
+    border-radius: var(--radius); background: #fff; box-shadow: var(--shadow);
+  }
+  legend { font-weight: 700; color: var(--text); }
+  label { display:block; margin-top: 10px; font-weight: 600; color: var(--text); }
+  input, select, button, output { width: 100%; padding: 10px 12px; box-sizing: border-box; border-radius: 8px; }
+  input, select { border: 1px solid var(--border); background: #fff; }
+  input:focus, select:focus {
+    outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+  }
+  .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+
+  .toolbar { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+
+  .output {
+    margin-top: 16px; padding: 14px; background: var(--soft);
+    border: 1px solid var(--border); border-radius: var(--radius);
+  }
+
+  .note { font-size: 0.93em; color: var(--muted); }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
+
+  .btn {
+    cursor: pointer; border: 1px solid var(--primary); background: var(--primary);
+    color: #fff; font-weight: 700; letter-spacing: 0.01em; transition: background 0.2s ease, transform 0.02s ease;
+  }
+  .btn:hover { background: var(--primary-hover); }
+  .btn:active { transform: translateY(1px); }
+  .btn.secondary { background: #fff; color: var(--primary); }
+  .btn.warn { border-color: var(--danger); background: var(--danger); }
+  .btn.xs { padding: 6px 8px; font-size: 0.85em; }
+
+  .error { border: 2px solid var(--danger) !important; background: #fff7f7; }
+  .help { color: var(--danger); font-size: 0.9em; margin-top: 6px; }
+
+  /* レスポンシブ */
+  @media (max-width: 900px) { .grid3 { grid-template-columns: 1fr 1fr; } .toolbar { grid-template-columns: 1fr; } }
+  @media (max-width: 640px) { .grid3 { grid-template-columns: 1fr; } }
+
+  /* 結果の表 */
+  .result-table {
+    width: 100%; border-collapse: collapse; font-size: 0.95em;
+  }
+  .result-table th, .result-table td {
+    border-bottom: 1px solid var(--border); padding: 10px;
+  }
+  .result-table th { text-align: left; color: var(--muted); width: 36%; }
+
+  /* ログテーブル */
+  table.log-table {
+    width: 100%; border-collapse: collapse; font-size: 0.9em;
+  }
+  table.log-table th, table.log-table td {
+    border-bottom: 1px solid var(--border); padding: 8px;
+  }
+  table.log-table th { color: var(--muted); }
+
+  /* チャート */
+  .chart-wrap { width: 100%; overflow: auto; }
+  #kChart {
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+  }
+
+  /* 印刷用：余計なUIを非表示 */
+  @media print {
+    .no-print { display: none !important; }
+  }
+</style>
+</head>
+<body>
+<h1>土の透水試験（定水位法）— 透水係数 k（m/s）計算［幾何自動計算・出力機能付き］</h1>
+<p class="note">
+  使用式：<code class="mono">k = (Q · L) / (A · h)</code>（出力：m/s）<br>
+  参考：JIS A 1218:2020／NPO住宅地盤品質協会（定水位法）。
+</p>
+
+<!-- 採取体積 V と採取時間 t -->
+<fieldset id="modeVt">
+  <legend>採取体積 V と採取時間 t</legend>
+
+  <div class="grid3">
+    <div>
+      <label>採取体積 V
+        <input id="Vval" type="number" step="any" placeholder="例：500" aria-describedby="VvalHelp">
+      </label>
+      <div id="VvalHelp" class="help" style="display:none;">V を正の数値で入力してください。</div>
+    </div>
+    <div>
+      <label>V の単位
+        <select id="Vunit">
+          <option value="cm3">cm³</option>
+          <option value="m3">m³</option>
+          <option value="L">L</option>
+          <option value="ml">mL</option>
+        </select>
+      </label>
+    </div>
+    <div>
+      <label>採取時間 t（秒）
+        <input id="tsec" type="number" step="any" placeholder="例：60" aria-describedby="tsecHelp">
+      </label>
+      <div id="tsecHelp" class="help" style="display:none;">t は正の秒数で入力してください。</div>
+    </div>
+  </div>
+</fieldset>
+
+<!-- 幾何の自動計算 -->
+<fieldset>
+  <legend>幾何の自動計算（任意）— 円筒の直径から断面積を自動算出</legend>
+  <p class="note">円筒の断面積は <code class="mono">A = π D² / 4</code>。</p>
+
+  <div class="grid3">
+    <div>
+      <label>試料直径 D
+        <input id="Dsample" type="number" step="any" placeholder="例：10.00">
+      </label>
+    </div>
+    <div>
+      <label>D の単位
+        <select id="Dunit">
+          <option value="cm">cm</option>
+          <option value="m">m</option>
+        </select>
+      </label>
+    </div>
+    <div>
+      <label>（計算結果）供試体断面積 A（自動）
+        <output id="Acalc" class="mono">—</output>
+      </label>
+    </div>
+  </div>
+
+  <div class="grid3">
+    <div>
+      <button id="reflectA" class="btn secondary no-print">Aに反映（下の A 入力欄へ単位系に合わせてセット）</button>
+    </div>
+    <div></div><div></div>
+  </div>
+</fieldset>
+
+<!-- 長さ・面積系、試料寸法・水頭差 -->
+<fieldset>
+  <legend>試料寸法・水頭差（長さ系は m／cm の選択可）</legend>
+
+  <div class="grid3">
+    <div>
+      <label>単位系（長さ・面積）
+        <select id="lenUnits">
+          <option value="cm">センチメートル系（L,h: cm／A: cm² → 自動で m に換算）</option>
+          <option value="m">メートル系（L,h: m／A: m²）</option>
+        </select>
+      </label>
+    </div>
+    <div>
+      <label>（任意）水温 T［℃］
+        <input id="temp" type="number" step="any" placeholder="例：20">
+      </label>
+    </div>
+    <div>
+      <label>基準温度（補正）
+        <select id="Tref">
+          <option value="15">基準 15℃</option>
+          <option value="20">基準 20℃</option>
+        </select>
+      </label>
+    </div>
+  </div>
+
+  <div class="grid3">
+    <div>
+      <label>試料長 L
+        <input id="L" type="number" step="any" placeholder="例：12.73" aria-describedby="LHelp">
+      </label>
+      <div id="LHelp" class="help" style="display:none;">L を正の数値で入力してください。</div>
+    </div>
+    <div>
+      <label>試料断面積 A（円筒なら A=πD²/4）
+        <input id="A" type="number" step="any" placeholder="例：7.854e-4" aria-describedby="AHelp">
+      </label>
+      <div id="AHelp" class="help" style="display:none;">A を入力するか、上の D から自動計算値を反映してください。</div>
+    </div>
+    <div>
+      <label>水頭差 h（上流面と下流面の差）
+        <input id="h" type="number" step="any" placeholder="例：3.0" aria-describedby="hHelp">
+      </label>
+      <div id="hHelp" class="help" style="display:none;">h を正の数値で入力してください。</div>
+    </div>
+  </div>
+
+  <!-- 動水勾配 i のリアルタイム表示 -->
+  <div class="grid3">
+    <div>
+      <label>（計算結果）動水勾配 i（無次元）
+        <output id="igrad" class="mono">—</output>
+      </label>
+      <div class="note">i = h / L（長さ系は選択に応じて SI に自動換算）</div>
+    </div>
+    <div></div><div></div>
+  </div>
+</fieldset>
+
+<!-- 設定・出力 -->
+<fieldset>
+  <legend>動作設定・出力</legend>
+  <div class="toolbar">
+    <div>
+      <label><input id="liveMode" type="checkbox" class="no-print"> 即時計算モード（Enter確定時のみ計算）</label>
+      <div class="note">ONにすると、Enterで入力を確定したタイミング（またはセレクト変更）で計算・ログ保存します。</div>
+      <div style="margin-top:10px;">
+        <label>試料ID
+          <input id="sampleId" type="text" placeholder="例：試料A-01">
+        </label>
+        <div class="note">ファイル名とログに含めます（保存：ブラウザ）。</div>
+      </div>
+    </div>
+    <div class="grid3 no-print">
+      <button id="calc" class="btn">計算する</button>
+      <button id="exportXls" class="btn secondary">結果をExcel（.xls）</button>
+      <button id="exportCsv" class="btn secondary">結果をCSV</button>
+    </div>
+    <div class="grid3 no-print" style="margin-top: 8px;">
+      <button id="exportPdf" class="btn secondary">結果をPDF（印刷）</button>
+      <button id="exportLogXls" class="btn secondary">ログをExcel（.xls）</button>
+      <button id="exportLogCsv" class="btn secondary">ログをCSV</button>
+    </div>
+    <div class="no-print" style="margin-top: 8px;">
+      <button id="clearLogs" class="btn warn">ログをすべてクリア</button>
+    </div>
+  </div>
+</fieldset>
+
+<div class="output" id="result"></div>
+
+<!-- ログ表示 -->
+<fieldset>
+  <legend>計算ログ（最新20件）</legend>
+  <div id="logArea">
+    <table class="log-table" id="logTable">
+      <thead>
+        <tr>
+          <th>日時</th><th>試料ID</th><th>k（m/s）</th><th>k15℃（m/s）</th><th>i</th><th>Q（m³/s）</th><th>L（m）</th><th>h（m）</th><th>A（m²）</th><th>T（℃）</th><th>基準</th><th class="no-print">操作</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+    <div class="note">※ブラウザのローカルに保存されます（localStorage）。各行の「削除」で1件ずつ消せます。</div>
+  </div>
+</fieldset>
+
+<!-- kグラフ（対数スケール＋補助目盛） -->
+<fieldset>
+  <legend>kグラフ（縦軸：対数スケール k［m/s］／横軸：測定回数）</legend>
+  <div class="chart-wrap">
+    <canvas id="kChart" width="900" height="300" aria-label="k vs 測定回数（log scale）"></canvas>
+  </div>
+  <div class="grid3 no-print" style="margin-top:8px;">
+    <div>
+      <label>補助目盛倍率（カンマ区切り）
+        <input id="chartMinorInput" type="text" placeholder="例：2,3,4,5,6,7,8,9">
+      </label>
+      <div class="note">未指定時は 2,3,4,5,6,7,8,9 を使用します。</div>
+    </div>
+    <div>
+      <label><input id="chartMinorLabel" type="checkbox"> 補助目盛ラベルを表示</label>
+      <div class="note">補助目盛位置に「2e-4」などのラベルを描画します。</div>
+    </div>
+    <div>
+      <button id="exportChartPng" class="btn secondary">グラフをPNG保存</button>
+    </div>
+  </div>
+  <div class="note">※ログ（最新20件）の k をプロットします。k ≤ 0 は対数表示に乗らないためプロット対象外。</div>
+</fieldset>
+
+<p class="note">
+  ★ 単位換算ルール：<br>
+  ・長さ／面積が <b>cm系</b>の場合は、内部で <code class="mono">L,h → ×1e-2</code>、<code class="mono">A → ×1e-4</code> として SI（m,s）に統一。<br>
+  ・流量／体積はそれぞれ <b>m³/s</b>／<b>m³</b> に換算。例：<code class="mono">1 L/s → 1e-3 m³/s</code>、<code class="mono">500 mL → 5e-4 m³</code>。<br>
+  ・温度補正：<code class="mono">k_ref = k_T · (μ_T / μ_ref)</code>（動粘度 μ）。近似値テーブルを内蔵し、15–30℃近傍の概略補正に対応。詳細は規格等の粘度表をご参照ください。
+</p>
+
+<script>
+// ===== 体積のSI換算（m³へ）=====
+function to_m3_from_V(V, unit) {
+  if (!Number.isFinite(V)) return NaN;
+  const f = { m3: 1, L: 1e-3, ml: 1e-6, cm3: 1e-6 }[unit] ?? NaN;
+  return V * f;
+}
+
+// ===== 長さ系換算（m系へ統一）=====
+function to_SI_lengths(val, units, kind) {
+  // kind: 'Lh'（L,h）なら ×1e-2（cm→m）、'A'なら ×1e-4（cm²→m²）
+  if (!Number.isFinite(val)) return NaN;
+  if (units === 'm') return val;
+  if (units === 'cm') {
+    if (kind === 'Lh') return val * 1e-2;
+    if (kind === 'A')  return val * 1e-4;
+  }
+  return NaN;
+}
+
+// ===== DOM 参照 =====
+const lenUnitsSel = document.getElementById('lenUnits');
+const Ainput      = document.getElementById('A');
+const Linput      = document.getElementById('L');
+const hinput      = document.getElementById('h');
+const result      = document.getElementById('result');
+const liveMode    = document.getElementById('liveMode');
+const sampleId    = document.getElementById('sampleId');
+
+const Dsample     = document.getElementById('Dsample');
+const Dunit       = document.getElementById('Dunit');
+const AcalcOut    = document.getElementById('Acalc');
+const reflectABtn = document.getElementById('reflectA');
+
+// ===== 幾何の自動計算 =====
+function updateGeom() {
+  const Dv = parseFloat(Dsample.value);
+  if (Number.isFinite(Dv) && Dv > 0) {
+    const D_m  = (Dunit.value === 'm') ? Dv : Dv * 1e-2;
+    const A_m2 = Math.PI * Math.pow(D_m, 2) / 4;
+    const A_cm2= A_m2 * 1e4;
+    AcalcOut.textContent = `${A_m2.toExponential(6)} m²  /  ${A_cm2.toExponential(6)} cm²`;
+    AcalcOut.dataset.A_m2 = A_m2; // 内部利用
+  } else {
+    AcalcOut.textContent = '—';
+    AcalcOut.dataset.A_m2 = '';
+  }
+}
+[Dsample, Dunit].forEach(el => el.addEventListener('input', updateGeom));
+updateGeom();
+
+reflectABtn.addEventListener('click', () => {
+  const A_m2_str = AcalcOut.dataset.A_m2;
+  if (!A_m2_str) {
+    alert('試料直径 D を入力してください。');
+    return;
+  }
+  const A_m2 = parseFloat(A_m2_str);
+  if (lenUnitsSel.value === 'm') {
+    Ainput.value = A_m2;
+  } else {
+    Ainput.value = A_m2 * 1e4; // cm²へ
+  }
+  validateField('A', v => Number.isFinite(parseFloat(v)) && parseFloat(v) > 0, 'AHelp');
+});
+
+// ===== 動粘度テーブル（15–30℃ 概略値）=====
+const mu = {
+  15: 1.138, 16: 1.106, 17: 1.076, 18: 1.047, 19: 1.020,
+  20: 1.002, 21: 0.985, 22: 0.969, 23: 0.954, 24: 0.939,
+  25: 0.925, 26: 0.912, 27: 0.899, 28: 0.887, 29: 0.875, 30: 0.864
+};
+
+// ===== 動水勾配 i（= h / L）表示（リアルタイム）=====
+const igradOut = document.getElementById('igrad');
+function computeGradientI() {
+  const units = lenUnitsSel.value;
+  const Lv = parseFloat(Linput.value);
+  const hv = parseFloat(hinput.value);
+  const Lm = to_SI_lengths(Lv, units, 'Lh');
+  const hm = to_SI_lengths(hv, units, 'Lh');
+  let i = NaN;
+  if (Number.isFinite(Lm) && Number.isFinite(hm) && Lm > 0) i = hm / Lm;
+  igradOut.textContent = Number.isFinite(i) ? i.toFixed(4) : '—';
+  return i;
+}
+[Linput, hinput, lenUnitsSel].forEach(el => el.addEventListener('input', computeGradientI));
+computeGradientI();
+
+// ===== バリデーション =====
+function setError(el, helpId, hasError) {
+  if (!el) return;
+  el.classList.toggle('error', !!hasError);
+  const help = helpId ? document.getElementById(helpId) : null;
+  if (help) help.style.display = hasError ? '' : 'none';
+}
+function validateField(inputId, predicate, helpId) {
+  const el = document.getElementById(inputId);
+  const val = el.value;
+  const ok = predicate(val);
+  setError(el, helpId, !ok);
+  return ok;
+}
+function bindPositiveValidator(inputId, helpId) {
+  const el = document.getElementById(inputId);
+  el.addEventListener('input', () => {
+    validateField(inputId, v => Number.isFinite(parseFloat(v)) && parseFloat(v) > 0, helpId);
+    // 即時計算は Enter 確定のみ（ここでは計算しない）
+  });
+}
+
+// A は特殊（未入力でも D から自動があればOK）
+function validateA() {
+  const A_el = document.getElementById('A');
+  const A_val = parseFloat(A_el.value);
+  const hasA = Number.isFinite(A_val) && A_val > 0;
+  const hasAutoA = !!AcalcOut.dataset.A_m2;
+  const ok = hasA || hasAutoA;
+  setError(A_el, 'AHelp', !ok);
+  return ok;
+}
+document.getElementById('A').addEventListener('input', validateA);
+[Dsample, Dunit].forEach(el => el.addEventListener('input', validateA));
+
+bindPositiveValidator('Vval', 'VvalHelp');
+bindPositiveValidator('tsec', 'tsecHelp');
+bindPositiveValidator('L',    'LHelp');
+bindPositiveValidator('h',    'hHelp');
+
+// ===== 設定（試料ID・即時計算）=====
+const SAMPLE_KEY = 'constantHead_sampleId';
+const LIVE_KEY   = 'constantHead_liveMode';
+sampleId.value   = localStorage.getItem(SAMPLE_KEY) ?? '';
+liveMode.checked = localStorage.getItem(LIVE_KEY) === '1';
+sampleId.addEventListener('input', () => localStorage.setItem(SAMPLE_KEY, sampleId.value));
+liveMode.addEventListener('change', () => {
+  localStorage.setItem(LIVE_KEY, liveMode.checked ? '1' : '0');
+});
+
+// ===== ログ管理 =====
+const LOG_KEY = 'constantHead_logs';
+function loadLogs() {
+  try { const raw = localStorage.getItem(LOG_KEY); return raw ? JSON.parse(raw) : []; }
+  catch { return []; }
+}
+function saveLogs(logs) { localStorage.setItem(LOG_KEY, JSON.stringify(logs)); }
+function addLog(entry) {
+  const logs = loadLogs();
+  logs.push(entry);
+  const slim = logs.slice(-20);
+  saveLogs(slim);
+  renderLogTable(slim);
+  updateKChart(slim); // グラフ更新
+}
+function clearLogs() {
+  localStorage.removeItem(LOG_KEY);
+  renderLogTable([]);
+  updateKChart([]); // グラフ更新
+}
+function deleteLogById(id) {
+  const logs = loadLogs().filter(row => String(row.id) !== String(id));
+  saveLogs(logs);
+  renderLogTable(logs);
+  updateKChart(logs); // グラフ更新
+}
+
+// ===== 共通フォーマッタ =====
+const fmtExp = v => (Number.isFinite(v) ? v.toExponential(6) : '—');
+const fmtFix = v => (Number.isFinite(v) ? v.toFixed(4) : '—');
+const fmtNum = v => (Number.isFinite(v) ? v : '—');
+
+// ===== ログテーブル描画 =====
+function renderLogTable(logs) {
+  const viewLogs = logs.slice(-20);
+  const tbody = document.querySelector('#logTable tbody');
+  tbody.innerHTML = viewLogs.map(row => `
+    <tr>
+      <td>${row.timestamp}</td>
+      <td>${row.sampleId || '—'}</td>
+      <td>${fmtExp(row.k)}</td>
+      <td>${fmtExp(row.k15)}</td>
+      <td>${fmtFix(row.i)}</td>
+      <td>${fmtNum(row.Q)}</td>
+      <td>${fmtNum(row.L)}</td>
+      <td>${fmtNum(row.h)}</td>
+      <td>${fmtNum(row.A)}</td>
+      <td>${fmtNum(row.T)}</td>
+      <td>${row.Tr ?? '—'}</td>
+      <td class="no-print">
+        <button class="btn warn xs btn-delete" data-id="${row.id}">削除</button>
+      </td>
+    </tr>
+  `).join('');
+}
+document.getElementById('logTable').addEventListener('click', (e) => {
+  const btn = e.target.closest('.btn-delete');
+  if (!btn) return;
+  const id = btn.dataset.id;
+  if (!id) return;
+  if (confirm('このログを削除します。よろしいですか？')) deleteLogById(id);
+});
+renderLogTable(loadLogs());
+
+// ===== 計算本体 =====
+function computeAll() {
+  const vOk = validateField('Vval', v => Number.isFinite(parseFloat(v)) && parseFloat(v) > 0, 'VvalHelp');
+  const tOk = validateField('tsec', v => Number.isFinite(parseFloat(v)) && parseFloat(v) > 0, 'tsecHelp');
+  const lOk = validateField('L',    v => Number.isFinite(parseFloat(v)) && parseFloat(v) > 0, 'LHelp');
+  const hOk = validateField('h',    v => Number.isFinite(parseFloat(v)) && parseFloat(v) > 0, 'hHelp');
+  const aOk = validateA();
+
+  if (!(vOk && tOk && lOk && hOk && aOk)) {
+    return { ok:false, msg:
+      '⚠️ 入力値（V, t, L, A, h）を確認してください。赤枠の項目は修正が必要です。' +
+      '<br>・t は秒、L/h は m または cm、A は m² または cm² で入力。' +
+      '<br>・A が未入力の場合は「試料直径 D」から自動計算値を使用できます。'
+    };
+  }
+
+  // Q = V/t
+  const Vval = parseFloat(document.getElementById('Vval').value);
+  const Vunit = document.getElementById('Vunit').value;
+  const tsec = parseFloat(document.getElementById('tsec').value);
+  const V_m3  = to_m3_from_V(Vval, Vunit);
+  let Q_m3s = V_m3 / tsec;
+  if (!(Number.isFinite(tsec) && tsec > 0)) Q_m3s = NaN;
+
+  // L, h, A
+  const units = lenUnitsSel.value;
+  const L_in = parseFloat(Linput.value);
+  const h_in = parseFloat(hinput.value);
+  let   A_in = parseFloat(Ainput.value);
+  if (!Number.isFinite(A_in) || A_in <= 0) {
+    const A_m2_str = AcalcOut.dataset.A_m2;
+    if (A_m2_str) {
+      const A_m2_auto = parseFloat(A_m2_str);
+      A_in = (units === 'm') ? A_m2_auto : A_m2_auto * 1e4;
+    }
+  }
+  const L_m  = to_SI_lengths(L_in, units, 'Lh');
+  const h_m  = to_SI_lengths(h_in, units, 'Lh');
+  const A_m2 = to_SI_lengths(A_in, units, 'A');
+
+  const ok = [Q_m3s, L_m, h_m, A_m2].every(v => Number.isFinite(v) && v > 0);
+  if (!ok) return { ok:false, msg:'⚠️ 内部計算で不正な値を検出しました。単位や数値を再確認してください。' };
+
+  const i = h_m / L_m;
+  const k = (Q_m3s * L_m) / (A_m2 * h_m);
+
+  const T  = parseFloat(document.getElementById('temp').value);
+  const Tr = parseInt(document.getElementById('Tref').value, 10);
+  const muT = mu[Math.round(T)];
+  const muR = mu[Tr];
+
+  let k_ref = null;
+  if (Number.isFinite(T) && muT && muR) k_ref = k * (muT / muR);
+
+  // ★ 追加：k15℃（基準15℃への補正値）
+  const mu15 = mu[15];
+  let k_15 = null;
+  if (Number.isFinite(T) && muT && mu15) {
+    k_15 = k * (muT / mu15);
+  }
+
+  return {
+    ok:true,
+    values: { V_m3, tsec, Q_m3s, L_m, h_m, A_m2, i, k, k_ref, k_15, T, Tr,
+      sampleId: sampleId.value,
+      A_auto: AcalcOut.dataset.A_m2 ? parseFloat(AcalcOut.dataset.A_m2) : null
+    }
+  };
+}
+
+// ===== 結果レンダリング =====
+function renderResult(values) {
+  const { V_m3, tsec, Q_m3s, L_m, h_m, A_m2, i, k, k_ref, T, Tr, A_auto } = values;
+
+  const krefHtml = (Number.isFinite(T) && Number.isFinite(k_ref))
+    ? `<tr><th>温度補正 k<sub>${Tr}℃</sub>（m/s）</th><td><strong>${fmtExp(k_ref)}</strong>（T≈${Math.round(T)}℃）</td></tr>`
+    : (Number.isFinite(T) ? `<tr><th>温度補正</th><td>※15–30℃近傍の概略値のみ対応。詳細は粘度表をご参照ください。</td></tr>` : '');
+
+  const tableHtml = `
+    <table class="result-table">
+      <tr><th>透水係数 k（m/s）</th><td><strong>${fmtExp(k)}</strong></td></tr>
+      ${krefHtml}
+      <tr><th>動水勾配 i（無次元）</th><td>${fmtFix(i)}</td></tr>
+      <tr><th>流量 Q（m³/s）</th><td>${fmtNum(Q_m3s)}</td></tr>
+      <tr><th>試料長 L（m）</th><td>${fmtNum(L_m)}</td></tr>
+      <tr><th>水頭差 h（m）</th><td>${fmtNum(h_m)}</td></tr>
+      <tr><th>断面積 A（m²）</th><td>${fmtNum(A_m2)}</td></tr>
+    </table>
+  `;
+  const autoAHtml = (A_auto != null)
+    ? `<br><span class="note">供試体断面積（直径から計算）：A=${fmtExp(A_auto)} m²</span>`
+    : '';
+
+  const summaryHtml = `
+    <br><span class="note">入力（SI換算）：V=${fmtNum(V_m3)} m³, t=${fmtNum(tsec)} s, Q=${fmtNum(Q_m3s)} m³/s, L=${fmtNum(L_m)} m, A=${fmtNum(A_m2)} m², h=${fmtNum(h_m)} m</span>
+  `;
+
+  result.innerHTML = tableHtml + autoAHtml + summaryHtml;
+}
+
+// ===== 計算＋レンダリング＋ログ保存 =====
+function calculateAndRender(saveLog) {
+  const r = computeAll();
+  if (!r.ok) {
+    result.innerHTML = r.msg;
+    return null;
+  }
+  renderResult(r.values);
+
+  if (saveLog) {
+    const now = new Date();
+    const timestamp = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`;
+    addLog({
+      id: Date.now(),
+      timestamp,
+      sampleId: r.values.sampleId || '',
+      k: r.values.k,
+      k15: r.values.k_15,       // ★ 追加：k15 をログ保存
+      i: r.values.i,
+      Q: r.values.Q_m3s,
+      L: r.values.L_m,
+      h: r.values.h_m,
+      A: r.values.A_m2,
+      T: r.values.T,
+      Tr: r.values.Tr
+    });
+  }
+  return r.values;
+}
+
+// ===== ボタン操作 =====
+document.getElementById('calc').addEventListener('click', () => calculateAndRender(true));
+
+// ===== Enter確定のみ計算（liveMode ON 時）=====
+function attachEnterCommit(el) {
+  if (!el) return;
+  el.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && liveMode.checked) {
+      e.preventDefault();
+      calculateAndRender(true);
+    }
+  });
+}
+// Enter確定を付与する対象（入力系）
+[
+  document.getElementById('Vval'),
+  document.getElementById('tsec'),
+  Linput, hinput, Ainput,
+  Dsample,
+  document.getElementById('temp'),
+  sampleId
+].forEach(attachEnterCommit);
+
+// セレクト系は変更確定時（change）で計算
+[
+  document.getElementById('Vunit'),
+  lenUnitsSel,
+  Dunit,
+  document.getElementById('Tref')
+].forEach(sel => sel && sel.addEventListener('change', () => {
+  if (liveMode.checked) calculateAndRender(true);
+}));
+
+// ===== 出力（CSV／Excel／PDF／グラフPNG）=====
+// ファイル名：日時＋試料ID
+function sanitizeId(s) {
+  return (s || '').trim().replace(/\s+/g,'_').replace(/[^\w\-.]/g,'-');
+}
+function timestampStr(d = new Date()) {
+  return `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}_${String(d.getHours()).padStart(2,'0')}${String(d.getMinutes()).padStart(2,'0')}${String(d.getSeconds()).padStart(2,'0')}`;
+}
+function makeFilename(base, ext) {
+  const id = sanitizeId(sampleId.value);
+  const ts = timestampStr();
+  const idPart = id ? `_ID-${id}` : '';
+  return `${base}_${ts}${idPart}.${ext}`;
+}
+
+// CSV 生成
+function toCSV(rows) {
+  return rows.map(r => r.map(cell => {
+    const s = (cell ?? '').toString();
+    const needsQuote = /[",\n]/.test(s);
+    const esc = s.replace(/"/g, '""');
+    return needsQuote ? `"${esc}"` : esc;
+  }).join(',')).join('\n');
+}
+
+// Excel 2003 XML（SpreadsheetML）
+function buildExcelXml(sheetName, rows) {
+  const header = `<?xml version="1.0"?>
+  <?mso-application progid="Excel.Sheet"?>
+  <Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+            xmlns:o="urn:schemas-microsoft-com:office:office"
+            xmlns:x="urn:schemas-microsoft-com:office:excel"
+            xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
+            xmlns:html="http://www.w3.org/TR/REC-html40">
+    <Worksheet ss:Name="${sheetName}">
+      <Table>`;
+  const body = rows.map(row => `<Row>` + row.map(cell => {
+    const v = (cell ?? '').toString();
+    const isNum = !isNaN(Number(v)) && v !== '';
+    const t = isNum ? 'Number' : 'String';
+    return `<Cell><Data ss:Type="${t}">${v.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</Data></Cell>`;
+  }).join('') + `</Row>`).join('');
+  const footer = `</Table></Worksheet></Workbook>`;
+  return header + body + footer;
+}
+
+// ダウンロード
+function download(filename, mime, content) {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 0);
+}
+
+// 現在結果を行データへ
+function currentRows(values) {
+  const rows = [
+    ['項目','値','単位'],
+    ['透水係数 k', fmtExp(values.k), 'm/s'],
+    ['温度補正 k_ref', (Number.isFinite(values.k_ref)?fmtExp(values.k_ref):'—'), 'm/s'],
+    ['動水勾配 i', fmtFix(values.i), '—'],
+    ['流量 Q', fmtNum(values.Q_m3s), 'm³/s'],
+    ['試料長 L', fmtNum(values.L_m), 'm'],
+    ['水頭差 h', fmtNum(values.h_m), 'm'],
+    ['断面積 A', fmtNum(values.A_m2), 'm²'],
+    ['水温 T', fmtNum(values.T), '℃'],
+    ['基準温度', values.Tr ?? '—', '℃'],
+    ['試料ID', values.sampleId || '—', '—'],
+  ];
+  return rows;
+}
+
+// ログ全体を行データへ（★ k15 列を追加）
+function logRows(logs) {
+  const rows = [['日時','試料ID','k（m/s）','k15℃（m/s）','i','Q（m³/s）','L（m）','h（m）','A（m²）','T（℃）','基準']];
+  logs.forEach(r => rows.push([
+    r.timestamp,
+    r.sampleId || '—',
+    fmtExp(r.k),
+    fmtExp(r.k15),
+    fmtFix(r.i),
+    fmtNum(r.Q),
+    fmtNum(r.L),
+    fmtNum(r.h),
+    fmtNum(r.A),
+    fmtNum(r.T),
+    r.Tr ?? '—'
+  ]));
+  return rows;
+}
+
+// 出力ボタン
+document.getElementById('exportCsv').addEventListener('click', () => {
+  const v = calculateAndRender(false);
+  if (!v) return;
+  const csv = toCSV(currentRows(v));
+  download(makeFilename('constant_head_result','csv'), 'text/csv;charset=utf-8', csv);
+});
+
+document.getElementById('exportXls').addEventListener('click', () => {
+  const v = calculateAndRender(false);
+  if (!v) return;
+  const xml = buildExcelXml('Result', currentRows(v));
+  download(makeFilename('constant_head_result','xls'), 'application/vnd.ms-excel', xml);
+});
+
+document.getElementById('exportLogCsv').addEventListener('click', () => {
+  const logs = loadLogs();
+  const csv = toCSV(logRows(logs));
+  download(makeFilename('constant_head_logs','csv'), 'text/csv;charset=utf-8', csv);
+});
+
+document.getElementById('exportLogXls').addEventListener('click', () => {
+  const logs = loadLogs();
+  const xml = buildExcelXml('Logs', logRows(logs));
+  download(makeFilename('constant_head_logs','xls'), 'application/vnd.ms-excel', xml);
+});
+
+// すべてクリア
+document.getElementById('clearLogs').addEventListener('click', () => {
+  if (confirm('ログをすべて削除します。よろしいですか？')) clearLogs();
+});
+
+// PDF（印刷）
+document.getElementById('exportPdf').addEventListener('click', () => {
+  const v = calculateAndRender(false);
+  if (!v) return;
+  const titleId = sanitizeId(sampleId.value);
+  const title = titleId ? `定水位法（Constant Head）— 計算結果［試料ID: ${titleId}］` : '定水位法（Constant Head）— 計算結果';
+  const html = `
+    <!doctype html><html><head><meta charset="utf-8">
+    <title>${title}</title>
+    <style>
+      body { font-family: system-ui, -apple-system, "Segoe UI", "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif; padding: 24px; }
+      h1 { font-size: 1.2rem; margin-bottom: 8px; }
+      table { width: 100%; border-collapse: collapse; font-size: 0.95em; }
+      th, td { border-bottom: 1px solid #d0d7de; padding: 8px; }
+      th { text-align: left; color: #64748b; width: 36%; }
+      .note { color: #64748b; font-size: 0.9em; }
+    </style>
+    </head><body>
+      <h1>${title}</h1>
+      ${document.getElementById('result').innerHTML}
+      <p class="note">出力日時：${new Date().toLocaleString()}</p>
+      <script>setTimeout(() => window.print(), 50);<\/script>
+    </body></html>`;
+  const w = window.open('', '_blank');
+  w.document.open(); w.document.write(html); w.document.close();
+});
+
+// ===== kグラフ（対数スケール＋補助目盛）=====
+const kChartCanvas   = document.getElementById('kChart');
+const chartMinorInput= document.getElementById('chartMinorInput');
+const chartMinorLabel= document.getElementById('chartMinorLabel');
+
+function parseMinorMultipliers() {
+  const txt = (chartMinorInput?.value || '').trim();
+  if (!txt) return [2,3,4,5,6,7,8,9];
+  return txt.split(',')
+            .map(s => parseFloat(s.trim()))
+            .filter(v => Number.isFinite(v) && v > 1)
+            .sort((a,b) => a - b);
+}
+
+function resizeCanvasForDPR(canvas) {
+  if (!canvas) return;
+  const dpr = window.devicePixelRatio || 1;
+  const cssW = canvas.width;
+  const cssH = canvas.height;
+  canvas.width = cssW * dpr;
+  canvas.height = cssH * dpr;
+  canvas.style.width = cssW + 'px';
+  canvas.style.height = cssH + 'px';
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+
+function updateKChart(logs) {
+  if (!kChartCanvas) return;
+  const ctx = kChartCanvas.getContext('2d');
+  resizeCanvasForDPR(kChartCanvas);
+
+  const W = kChartCanvas.width / (window.devicePixelRatio || 1);
+  const H = kChartCanvas.height / (window.devicePixelRatio || 1);
+
+  ctx.clearRect(0, 0, W, H);
+
+  const m = { l: 80, r: 20, t: 20, b: 40 };
+
+  const ks = logs.map(r => Number(r.k)).filter(v => Number.isFinite(v) && v > 0);
+  const n = ks.length;
+
+  ctx.fillStyle = '#0f172a';
+  ctx.font = '12px system-ui';
+  ctx.fillText('k (m/s, log scale)', 8, m.t + 12);
+  ctx.fillText('測定回数', W / 2 - 30, H - 8);
+
+  if (n === 0) {
+    ctx.fillStyle = '#64748b';
+    ctx.fillText('プロット可能なデータがありません（k>0 のログを追加してください）', m.l + 10, H / 2);
+    return;
+  }
+
+  const yMin = Math.min(...ks);
+  const yMax = Math.max(...ks);
+  const logMin = Math.log10(yMin);
+  const logMax = Math.log10(yMax);
+  const pad = 0.1;
+  const y0Log = logMin - pad;
+  const y1Log = logMax + pad;
+
+  const plotW = W - m.l - m.r;
+  const plotH = H - m.t - m.b;
+  const xMin = 1, xMax = n;
+  const xTo = x => m.l + (x - xMin) / (xMax - xMin) * plotW;
+  const yTo = y => {
+    const ly = Math.log10(y);
+    return m.t + (1 - (ly - y0Log) / (y1Log - y0Log)) * plotH;
+  };
+
+  // メジャーグリッド（10^p）
+  ctx.strokeStyle = '#e5e7eb';
+  ctx.lineWidth = 1;
+  const tickStart = Math.floor(y0Log);
+  const tickEnd   = Math.ceil(y1Log);
+  for (let p = tickStart; p <= tickEnd; p++) {
+    const yVal = Math.pow(10, p);
+    const yy = yTo(yVal);
+    ctx.beginPath(); ctx.moveTo(m.l, yy); ctx.lineTo(W - m.r, yy); ctx.stroke();
+    ctx.fillStyle = '#64748b';
+    ctx.fillText(`1e${p}`, 12, yy + 4);
+  }
+
+  // 補助目盛（minor ticks）
+  const minors = parseMinorMultipliers();
+  const showMinorLabel = !!(chartMinorLabel && chartMinorLabel.checked);
+
+  ctx.strokeStyle = '#edf2f7';
+  ctx.lineWidth = 1;
+  for (let p = tickStart; p < tickEnd; p++) {
+    const base = Math.pow(10, p);
+    minors.forEach(mul => {
+      const yVal = base * mul;
+      if (yVal < Math.pow(10, p+1)) {
+        const yy = yTo(yVal);
+        ctx.beginPath(); ctx.moveTo(m.l, yy); ctx.lineTo(W - m.r, yy); ctx.stroke();
+        if (showMinorLabel) {
+          ctx.fillStyle = '#94a3b8';
+          const expStr = `${mul}e${p}`;
+          ctx.fillText(expStr, 12, yy + 4);
+        }
+      }
+    });
+  }
+
+  // x目盛
+  ctx.fillStyle = '#64748b';
+  ctx.strokeStyle = '#d0d7de';
+  for (let xi = 1; xi <= n; xi++) {
+    const xx = xTo(xi);
+    ctx.beginPath(); ctx.moveTo(xx, H - m.b); ctx.lineTo(xx, H - m.b + 5); ctx.stroke();
+    ctx.fillText(String(xi), xx - 3, H - m.b + 18);
+  }
+
+  // 軸ライン
+  ctx.strokeStyle = '#0f172a';
+  ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.moveTo(m.l, m.t); ctx.lineTo(m.l, H - m.b); ctx.lineTo(W - m.r, H - m.b); ctx.stroke();
+
+  // 折れ線
+  ctx.strokeStyle = '#2563eb';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let i = 0; i < n; i++) {
+    const xx = xTo(i + 1);
+    const yy = yTo(ks[i]);
+    if (i === 0) ctx.moveTo(xx, yy); else ctx.lineTo(xx, yy);
+  }
+  ctx.stroke();
+
+  // 点
+  ctx.fillStyle = '#1d4ed8';
+  for (let i = 0; i < n; i++) {
+    const xx = xTo(i + 1);
+    const yy = yTo(ks[i]);
+    ctx.beginPath(); ctx.arc(xx, yy, 3, 0, Math.PI * 2); ctx.fill();
+  }
+
+  ctx.fillStyle = '#64748b';
+  ctx.fillText(`n=${n}`, W - m.r - 40, m.t + 12);
+}
+// 初期描画
+updateKChart(loadLogs());
+
+// 補助目盛の設定変更で再描画
+[chartMinorInput, chartMinorLabel].forEach(el => {
+  if (!el) return;
+  el.addEventListener('input', () => updateKChart(loadLogs()));
+  el.addEventListener('change', () => updateKChart(loadLogs()));
+});
+
+// グラフPNG保存
+document.getElementById('exportChartPng').addEventListener('click', () => {
+  if (!kChartCanvas) return;
+  updateKChart(loadLogs());
+  const a = document.createElement('a');
+  a.href = kChartCanvas.toDataURL('image/png');
+  a.download = makeFilename('constant_head_k_chart','png');
+  document.body.appendChild(a); a.click();
+  a.remove();
+});
+</script>
+
+<hr class="no-print">
+<p class="note no-print">
+  ■ 技術メモ：定水位法は、砂質土など比較的高透水性の試料に適用し、定常状態での流量 Q を用いて
+  <code class="mono">k = (Q · L) / (A · h)</code> で求めます。幾何ヘルパーは、試料直径から供試体断面積を迅速に確認するための補助機能です。
+</p>
+</body>
+</html>
